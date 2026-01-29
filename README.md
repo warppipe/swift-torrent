@@ -1,5 +1,7 @@
 # SwiftTorrent
 
+![screenshot](https://github.com/warppipe/SwiftTorrent/raw/gh-pages/img/SwiftTorrent.png)](https://github.com/warppipe/SwiftTorrent)
+
 A pure Swift BitTorrent library targeting macOS 14+ and iOS 17+. Implements BEP-3 (peer wire protocol), BEP-5 (DHT), and BEP-15 (UDP trackers) with no C/C++ dependencies.
 
 ## Features
