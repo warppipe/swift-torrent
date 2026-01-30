@@ -12,6 +12,7 @@ public struct PeerInfo: Sendable, Identifiable {
     public var amInterested: Bool
     public var downloadRate: Double  // bytes per second
     public var uploadRate: Double
+    public var peerBitfield: Bitfield?
 
     public init(id: Data, address: String, port: UInt16) {
         self.id = id

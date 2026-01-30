@@ -13,6 +13,11 @@ public final class PeerConnection: @unchecked Sendable {
     private let infoHash: Data
     private let peerID: Data
 
+    public var onMessage: (@Sendable (PeerMessage) -> Void)?
+    public var onDisconnect: (@Sendable () -> Void)?
+    public private(set) var remotePeerID: Data?
+    public private(set) var supportsExtensions: Bool = false
+
     public init(address: String, port: UInt16, infoHash: Data, peerID: Data) {
         self.address = address
         self.port = port
@@ -33,24 +38,34 @@ public final class PeerConnection: @unchecked Sendable {
     }
 
     public func connect(on group: EventLoopGroup) async throws -> Channel {
+        let onMsg = self.onMessage
+        let onDisc = self.onDisconnect
+        let decoder = PeerMessageDecoder()
+
         let bootstrap = ClientBootstrap(group: group)
             .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
+            .connectTimeout(.seconds(10))
             .channelInitializer { channel in
-                let decoder = ByteToMessageHandler(PeerMessageDecoder())
-                let encoder = PeerMessageEncoder()
-                return channel.pipeline.addHandler(decoder).flatMap { _ in
-                    channel.pipeline.addHandler(encoder)
-                }
+                let decoderHandler = ByteToMessageHandler(decoder)
+                let messageHandler = PeerMessageHandler(onMessage: onMsg, onDisconnect: onDisc)
+                return channel.pipeline.addHandlers([decoderHandler, messageHandler])
             }
         let ch = try await bootstrap.connect(host: address, port: Int(port)).get()
 
         setChannel(ch)
 
-        // Send handshake
+        // Send handshake as raw bytes (before the encoder is in the pipeline)
         let handshake = Handshake(infoHash: infoHash, peerID: peerID)
         var buffer = ch.allocator.buffer(capacity: Handshake.length)
         buffer.writeBytes(handshake.encode())
         try await ch.writeAndFlush(buffer).get()
+
+        // Add the message encoder after handshake is sent
+        try await ch.pipeline.addHandler(PeerMessageEncoder()).get()
+
+        // Store remote handshake info
+        self.remotePeerID = decoder.remotePeerID
+        self.supportsExtensions = decoder.remoteSupportsExtensions
 
         return ch
     }
@@ -80,12 +95,16 @@ final class PeerMessageDecoder: ByteToMessageDecoder {
     typealias InboundOut = PeerMessage
 
     private var handshakeReceived = false
+    var remotePeerID: Data?
+    var remoteSupportsExtensions: Bool = false
 
     func decode(context: ChannelHandlerContext, buffer: inout ByteBuffer) throws -> DecodingState {
         if !handshakeReceived {
             guard buffer.readableBytes >= Handshake.length else { return .needMoreData }
             guard let bytes = buffer.readBytes(length: Handshake.length) else { return .needMoreData }
-            let _ = try Handshake.decode(from: Data(bytes))
+            let handshake = try Handshake.decode(from: Data(bytes))
+            remotePeerID = handshake.peerID
+            remoteSupportsExtensions = (handshake.reserved[5] & 0x10) != 0
             handshakeReceived = true
             return .continue
         }
@@ -106,6 +125,32 @@ final class PeerMessageDecoder: ByteToMessageDecoder {
         let message = try PeerMessage.decode(from: Data(payload))
         context.fireChannelRead(wrapInboundOut(message))
         return .continue
+    }
+}
+
+/// Receives decoded PeerMessage and calls the callback.
+final class PeerMessageHandler: ChannelInboundHandler {
+    typealias InboundIn = PeerMessage
+
+    private let onMessage: (@Sendable (PeerMessage) -> Void)?
+    private let onDisconnect: (@Sendable () -> Void)?
+
+    init(onMessage: (@Sendable (PeerMessage) -> Void)?, onDisconnect: (@Sendable () -> Void)?) {
+        self.onMessage = onMessage
+        self.onDisconnect = onDisconnect
+    }
+
+    func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+        let message = unwrapInboundIn(data)
+        onMessage?(message)
+    }
+
+    func channelInactive(context: ChannelHandlerContext) {
+        onDisconnect?()
+    }
+
+    func errorCaught(context: ChannelHandlerContext, error: Error) {
+        context.close(promise: nil)
     }
 }
 

@@ -13,6 +13,7 @@ public enum PeerMessage: Equatable, Sendable {
     case piece(index: UInt32, begin: UInt32, block: Data)
     case cancel(index: UInt32, begin: UInt32, length: UInt32)
     case port(UInt16)
+    case extended(id: UInt8, payload: Data)
 
     // Message IDs
     public static let chokeID: UInt8 = 0
@@ -25,6 +26,7 @@ public enum PeerMessage: Equatable, Sendable {
     public static let pieceID: UInt8 = 7
     public static let cancelID: UInt8 = 8
     public static let portID: UInt8 = 9
+    public static let extendedID: UInt8 = 20
 
     /// Serialize to wire format: <length prefix><message ID><payload>
     public func encode() -> Data {
@@ -84,6 +86,12 @@ public enum PeerMessage: Equatable, Sendable {
             data.append(contentsOf: UInt32(3).bigEndianBytes)
             data.append(Self.portID)
             data.append(contentsOf: port.bigEndianBytes)
+
+        case .extended(let id, let payload):
+            data.append(contentsOf: UInt32(2 + UInt32(payload.count)).bigEndianBytes)
+            data.append(Self.extendedID)
+            data.append(id)
+            data.append(payload)
         }
         return data
     }
@@ -135,6 +143,11 @@ public enum PeerMessage: Equatable, Sendable {
         case portID:
             guard rest.count >= 2 else { throw PeerMessageError.invalidPayload }
             return .port(rest.readUInt16BE(at: 0))
+
+        case extendedID:
+            guard rest.count >= 1 else { throw PeerMessageError.invalidPayload }
+            let extID = rest[rest.startIndex]
+            return .extended(id: extID, payload: Data(rest.dropFirst()))
 
         default:
             throw PeerMessageError.unknownMessageID(id)

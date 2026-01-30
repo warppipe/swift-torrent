@@ -30,6 +30,7 @@ public actor Session {
         }
 
         let handle = TorrentHandle(params: params, settings: settings, group: group)
+        await handle.finishInitialization()
         torrents[hash] = handle
 
         alertContinuation.yield(TorrentAddedAlert(

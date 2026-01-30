@@ -86,4 +86,30 @@ public actor PieceManager {
         let start = Int64(index) * Int64(pieceLength)
         return Int(min(Int64(pieceLength), totalSize - start))
     }
+
+    /// Get the assembled piece data buffer (before completion/verification).
+    public func getPieceBuffer(_ index: Int) -> Data? {
+        pieceBuffers[index]
+    }
+
+    /// Number of 16KB blocks in a piece.
+    public func blockCount(for pieceIndex: Int) -> Int {
+        let size = expectedPieceSize(pieceIndex)
+        return (size + 16383) / 16384
+    }
+
+    /// Whether a piece is currently being downloaded.
+    public func isInProgress(_ index: Int) -> Bool {
+        inProgress.contains(index)
+    }
+
+    /// The standard piece length for this torrent.
+    public func getPieceLength() -> Int {
+        pieceLength
+    }
+
+    /// Total number of pieces.
+    public func getPieceCount() -> Int {
+        pieceCount
+    }
 }

@@ -9,12 +9,18 @@ public struct Handshake: Sendable, Equatable {
     public let peerID: Data     // 20 bytes
     public let reserved: Data   // 8 bytes (extension bits)
 
-    public init(infoHash: Data, peerID: Data, reserved: Data = Data(count: 8)) {
+    public static func defaultReserved() -> Data {
+        var r = Data(count: 8)
+        r[5] |= 0x10  // BEP-10 extension protocol
+        return r
+    }
+
+    public init(infoHash: Data, peerID: Data, reserved: Data? = nil) {
         precondition(infoHash.count == 20)
         precondition(peerID.count == 20)
         self.infoHash = infoHash
         self.peerID = peerID
-        self.reserved = reserved
+        self.reserved = reserved ?? Self.defaultReserved()
     }
 
     /// Encode to wire format.
