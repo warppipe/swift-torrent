@@ -2,10 +2,14 @@
 
 ![screenshot](https://raw.githubusercontent.com/warppipe/SwiftTorrent/refs/heads/main/img/SwiftTorrent.png)
 
-A pure Swift BitTorrent library targeting macOS 14+ and iOS 17+. Implements BEP-3 (peer wire protocol), BEP-5 (DHT), and BEP-15 (UDP trackers) with no C/C++ dependencies.
+A pure Swift BitTorrent library targeting macOS 14+ and iOS 17+. Implements BEP-3 (peer wire protocol), BEP-5 (DHT), BEP-9 (metadata exchange), BEP-10 (extension protocol), and BEP-15 (UDP trackers) with no C/C++ dependencies.
 
 ## Features
 
+- Full download pipeline: magnet link → metadata exchange → piece download → multi-file disk write
+- BEP-9 metadata exchange (download torrent info from peers via magnet links)
+- BEP-10 extension protocol for extended handshake and message negotiation
+- Multi-file torrent support with cross-file piece spanning
 - Bencode encoding/decoding
 - .torrent file parsing and creation
 - Magnet link support
@@ -124,6 +128,36 @@ let encoder = BencodeEncoder()
 let encoded = encoder.encode(.dictionary([
     (key: Data("key".utf8), value: .string(Data("value".utf8)))
 ]))
+```
+
+### Download a multi-file torrent from a magnet link
+
+```swift
+import SwiftTorrent
+
+let session = Session(settings: SessionSettings(
+    listenPort: 6881,
+    dhtEnabled: true,
+    savePath: "/Users/me/Downloads"
+))
+
+let params = try AddTorrentParams.fromMagnet(
+    "magnet:?xt=urn:btih:...",
+    savePath: "/Users/me/Downloads"
+)
+let handle = try await session.addTorrent(params)
+try await handle.start()
+try await session.startDHT()
+
+// Wait for metadata from peers (throws TorrentError.timeout on failure)
+let info = try await handle.waitForMetadata(timeout: 60)
+for file in info.files {
+    print("\(file.path) — \(file.length) bytes")
+}
+
+// Wait for download to complete
+try await handle.waitForCompletion(timeout: 300)
+print("Download complete!")
 ```
 
 ### Save and restore resume data
